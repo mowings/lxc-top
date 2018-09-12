@@ -1,7 +1,9 @@
 # lxc-top: Show which lxc containers are hogging resources
 
 `lxc-top` is a simple top-like program to show top lxc-containers by cpu or memory usage. This can
-be useful when tracking down excessive container resource usage.
+be useful when tracking down excessive container resource usage. 
+
+Unlike the `lxc-top` program that comes bundled with lxc, this version shows cpu percentages snapshotted every 3 seconds, as opposed to simple cumulative cpu seconds per container. This will give you a better idea of current cpu usage in real-time.
 
 To install, simply download a release, untar it, copy the lxc-top binary to somehwere on your path, and run it:
 
@@ -11,9 +13,6 @@ To install, simply download a release, untar it, copy the lxc-top binary to some
     sudo lxc-top
 
 Toggle between cpu/memory usage sorts by pressing `s`, and quit by pressing `q`.
-
-Unlike the `lxc-top` program that comes bundled with lxc, this version show cpu percentages as snapshotted between
-runs, as opposed to simple cumulative cpu seconds per container. This will give you a better idea of current cpu usage in real-time.
 
 Note that cpu percentages will frequently go above 100% for containers hosted on multi-core systems. This is normal. 
 
