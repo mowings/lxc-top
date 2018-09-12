@@ -247,6 +247,9 @@ func lxcInfo(container string, containers *ContainerMap) {
 
 // Fatal error
 func Fatal(fmtStr string, args ...interface{}) {
+	if termbox.IsInit {
+		termbox.Close()
+	}
 	msg := fmt.Sprintf(fmtStr, args...)
 	fmt.Printf("%s\n", msg)
 	os.Exit(1)
