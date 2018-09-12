@@ -16,7 +16,7 @@ import (
 
 const DELAY = 3             // Delay between runs
 const TERM_WIDTH = 80       // Display width
-const VERSION = "1.0.0"     // Version
+const VERSION = "1.0.1"     // Version
 const LXC_INFO_TIMEOUT = 10 // Timeout in case lxc-info hangs
 
 // Column offsets
