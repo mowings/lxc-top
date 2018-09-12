@@ -201,6 +201,9 @@ func lxcList() []string {
 		Fatal("lxc-info produced no output. Either no containers are running or you forgot to 'sudo lxc-top'")
 	}
 	ret := strings.Split(string(out), "\n")
+	for i, name := range ret {
+		ret[i] = strings.TrimSpace(name)
+	}
 	return ret
 }
 
