@@ -5,7 +5,7 @@ be useful when tracking down excessive container resource usage.
 
 To install, simply download a release, untar it, copy the lxc-top binary to somehwere on your path, and run it:
 
-    wget https://github.com/mowings/lxc-top/releases/download/1.0.0a/lxc-top-1.0.1.tgz
+    wget https://github.com/mowings/lxc-top/releases/download/1.0.1a/lxc-top-1.0.1.tgz
     tar -xzvf lxc-top-1.0.1.tgz
     sudo cp lxc-top /usr/local/bin
     sudo lxc-top
