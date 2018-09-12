@@ -3,7 +3,7 @@
 `lxc-top` is a simple top-like program to show top lxc-containers by cpu or memory usage. This can
 be useful when tracking down excessive container resource usage.
 
-To install, simply download a release and copy it somehwere on your path, unzip it with `gzip -d`, and run 
+To install, simply download a release, unzip it with `gzip -d`, copy to it somehwere on your path, and run 
 
     sudo lxc-top
 
