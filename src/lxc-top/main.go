@@ -14,27 +14,38 @@ import (
 	"time"
 )
 
-const DELAY = 3
+const DELAY = 3             // Delay between runs
+const TERM_WIDTH = 80       // Display width
+const VERSION = "1.0.0"     // Version
+const LXC_INFO_TIMEOUT = 10 // Timeout in case lxc-info hangs
 
-var quit bool
-var memsort bool
+// Column offsets
+const (
+	OffsetName int = 0
+	OffsetCpu      = 52
+	OffsetMem      = 62
+)
 
+// Regexes for parsing lxc-info outpur
 var elapsedRex *regexp.Regexp = regexp.MustCompile(`CPU use: [ ]+(\d+)`)
 var memRex *regexp.Regexp = regexp.MustCompile(`Memory use: [ ]+(\d+)`)
 
+//
+// Container typre
 type Container struct {
 	Name          string
 	LastCheckTime time.Time
-	Elapsed       uint64
-	ElapsedPct    int
+	Cpu           uint64
+	CpuPct        int
 	Mem           uint64
 }
 
+// Sorting
 type ByCpu []Container
 
 func (b ByCpu) Len() int           { return len(b) }
 func (b ByCpu) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-func (b ByCpu) Less(i, j int) bool { return b[j].ElapsedPct < b[i].ElapsedPct }
+func (b ByCpu) Less(i, j int) bool { return b[j].CpuPct < b[i].CpuPct }
 
 type ByMem []Container
 
@@ -42,12 +53,15 @@ func (b ByMem) Len() int           { return len(b) }
 func (b ByMem) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b ByMem) Less(i, j int) bool { return b[j].Mem < b[i].Mem }
 
+//
+// Coontainer map
 type ContainerMap struct {
 	sync.Mutex
 	Containers map[string]Container
 }
 
-func (c *Container) MemFmt() string {
+// Formatted memopry string
+func (c *Container) MemPretty() string {
 	switch {
 	case c.Mem > 1073741824:
 		return fmt.Sprintf("%0.2f GB", float64(c.Mem)/1073741824.0)
@@ -65,54 +79,56 @@ func main() {
 	fmt.Printf("lxc-top initializing...\n")
 	lxcList() // Just test that we have containers and are running as roota
 	err := termbox.Init()
+	defer termbox.Close()
 	if err != nil {
 		panic(err)
 	}
-	go processEvents()
-	defer termbox.Close()
+	quitChan := make(chan bool)
+	sortChan := make(chan bool)
+	go processEvents(quitChan, sortChan)
+	go mainLoop(sortChan)
+	<-quitChan
+}
+
+//
+// main loop -- get container info, sort and display, delay
+func mainLoop(sortChan chan bool) {
 	containers := &ContainerMap{Containers: make(map[string]Container)}
+	memsort := false
 	for {
 		lxcGetAll(containers)
-		sortAndDisplay(containers)
-		delay()
-		if quit {
-			return
+		sortAndDisplay(containers, memsort)
+		select {
+		case memsort = <-sortChan:
+		case <-time.After(DELAY * time.Second):
 		}
 	}
 }
 
-func delay() {
-	last_sort := memsort
-	for i := 0; i < 5*DELAY; i++ {
-		if quit {
-			return
-		}
-		if last_sort != memsort {
-			return
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-}
-
-func processEvents() {
+// Termbox event poller. Handle kbd input
+func processEvents(quitChan chan bool, sortChan chan bool) {
+	memsort := false
 	for {
 		switch ev := termbox.PollEvent(); ev.Type {
 		case termbox.EventKey:
 			if ev.Ch == 'q' {
-				quit = true
+				quitChan <- true
 			} else if ev.Ch == 's' {
 				memsort = !memsort
+				sortChan <- memsort
 			}
 
 		case termbox.EventError:
 			panic(ev.Err)
 
 		case termbox.EventInterrupt:
-			quit = true
+			quitChan <- true
 		}
 	}
 }
 
+//
+// Get info for all running containers concurrently
 func lxcGetAll(containers *ContainerMap) {
 	names := lxcList()
 	var wg sync.WaitGroup
@@ -128,12 +144,9 @@ func lxcGetAll(containers *ContainerMap) {
 	wg.Wait()
 }
 
-func sortAndDisplay(c *ContainerMap) {
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Println("Recovered in f", r)
-		}
-	}()
+//
+// Sort and display as many containers as display dimensions will allow
+func sortAndDisplay(c *ContainerMap, memsort bool) {
 	var containers []Container
 
 	for _, v := range c.Containers {
@@ -155,12 +168,13 @@ func sortAndDisplay(c *ContainerMap) {
 		cur_sort = "MEM"
 	}
 
-	tbPrint(0, 0, false, strings.Repeat(" ", 80))
-	tbPrint(0, 0, false, fmt.Sprintf("'q' to exit, 's' to toggle memory/cpu sort [%s]", cur_sort))
-	tbPrint(0, 2, true, strings.Repeat(" ", 80))
-	tbPrint(0, 2, true, "NAME")
-	tbPrint(52, 2, true, "CPU %")
-	tbPrint(62, 2, true, "MEM")
+	tbClear(0, false)
+	tbClear(1, false)
+	tbPrint(0, 0, false, fmt.Sprintf("lxc-top v%s: 'q' to exit, 's' to toggle memory/cpu sort [%s]", VERSION, cur_sort))
+	tbClear(2, true)
+	tbPrint(OffsetName, 2, true, "NAME")
+	tbPrint(OffsetCpu, 2, true, "CPU %")
+	tbPrint(OffsetMem, 2, true, "MEM")
 
 	for i, container := range containers {
 		pos := i + 3
@@ -168,10 +182,10 @@ func sortAndDisplay(c *ContainerMap) {
 			break
 		}
 
-		tbPrint(0, pos, false, strings.Repeat(" ", 80))
-		tbPrint(0, pos, false, container.Name)
-		tbPrint(52, pos, false, fmt.Sprintf("%d", container.ElapsedPct))
-		tbPrint(62, pos, false, container.MemFmt())
+		tbClear(pos, false)
+		tbPrint(OffsetName, pos, false, container.Name)
+		tbPrint(OffsetCpu, pos, false, fmt.Sprintf("%d", container.CpuPct))
+		tbPrint(OffsetMem, pos, false, container.MemPretty())
 	}
 
 }
@@ -190,12 +204,10 @@ func lxcList() []string {
 	return ret
 }
 
+// Get container info with a timeout. Compute cpu usage, parse me usage, etc for a sibgle container
 func lxcInfo(container string, containers *ContainerMap) {
-	if quit {
-		return
-	}
 	// Set up our run context
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), LXC_INFO_TIMEOUT*time.Second)
 	defer cancel() // The cancel should be deferred so resources are cleaned up
 	cmd := exec.CommandContext(ctx, "lxc-info", "-H", "-n", container)
 	out, err := cmd.CombinedOutput()
@@ -218,33 +230,40 @@ func lxcInfo(container string, containers *ContainerMap) {
 	mem_used, _ := strconv.ParseUint(res[0][1], 10, 64)
 	c := Container{Name: container, Mem: mem_used}
 	c.LastCheckTime = time.Now()
-	c.Elapsed = cpu_time
+	c.Cpu = cpu_time
 	containers.Lock()
 	defer containers.Unlock()
 	old := containers.Containers[container]
 	if old.Name != "" {
 		dur := c.LastCheckTime.Sub(old.LastCheckTime)
-		elapsed_cpu := c.Elapsed - old.Elapsed
-		c.ElapsedPct = int(elapsed_cpu * 100 / uint64(dur))
+		elapsed_cpu := c.Cpu - old.Cpu
+		c.CpuPct = int(elapsed_cpu * 100 / uint64(dur))
 	}
 	containers.Containers[container] = c
 }
 
+// Fatal error
 func Fatal(fmtStr string, args ...interface{}) {
 	msg := fmt.Sprintf(fmtStr, args...)
 	fmt.Printf("%s\n", msg)
 	os.Exit(1)
 }
 
+// Clear a terminal line
+func tbClear(y int, reverse bool) {
+	tbPrint(0, y, reverse, strings.Repeat(" ", TERM_WIDTH))
+}
+
+// Print a string at x, y optionally reversed
 func tbPrint(x, y int, reverse bool, msg string) {
 	fg := termbox.ColorDefault
 	bg := termbox.ColorDefault
+	var attr termbox.Attribute
 	if reverse {
-		fg |= termbox.AttrReverse
-		bg |= termbox.AttrReverse
+		attr = termbox.AttrReverse
 	}
 	for _, c := range msg {
-		termbox.SetCell(x, y, c, fg, bg)
+		termbox.SetCell(x, y, c, fg|attr, bg|attr)
 		x++
 	}
 }
